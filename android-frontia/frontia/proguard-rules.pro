@@ -16,9 +16,9 @@
 #   public *;
 #}
 
--keep public class * extends me.kaede.frontia.core.BasePluginPackage
--keep public class * extends me.kaede.frontia.bridge.plugin.BaseBehaviour
--keep class me.kaede.frontia.** {
+-keep public class * extends moe.studio.frontia.core.BasePluginPackage
+-keep public class * extends moe.studio.frontia.bridge.plugin.BaseBehaviour
+-keep class moe.studio.frontia.** {
     <fields>;
     <methods>;
 }

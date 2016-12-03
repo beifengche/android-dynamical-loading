@@ -1,1 +1,13 @@
-include ':main-app', ':video-plugin', ':frontia', ':plugin-behaviour'
+// Frontia
+include ':frontia'
+project(':frontia').projectDir = file("frontia")
+
+// Demo APP (Host)
+include ':app-demo'
+project(':app-demo').projectDir = file("app-demo")
+
+// Tencent SDK (Plugin)
+include ':video-plugin'
+project(':video-plugin').projectDir = file("tencent-sdk/video-plugin")
+include ':video-behaviour'
+project(':video-behaviour').projectDir = file("tencent-sdk/video-behaviour")

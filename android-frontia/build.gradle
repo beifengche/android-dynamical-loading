@@ -1,23 +1,28 @@
+/*
+ * Copyright (c) 2016. Kaede (kidhaibara@gmail.com)
+ */
+
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
-    ext {
-        buildGradle = '2.1.2';
-        buildToolsVersion = '23.0.2'
-        targetSdkVersion = 23
-        minSdkVersion = 15
-        androidSupportLibraryVersion = '23.1.1'
-        compileSdkVersion = targetSdkVersion
-    }
     repositories {
         jcenter()
     }
+
+    ext {
+        buildGradle = '2.2.0';
+        buildToolsVersion = '24.0.2'
+        targetSdkVersion = 24
+        minSdkVersion = 9
+        androidSupportLibraryVersion = '23.4.0'
+    }
+
     dependencies {
         classpath "com.android.tools.build:gradle:${rootProject.ext.buildGradle}"
-
-        // NOTE: Do not place your application dependencies here; they belong
-        // in the individual module build.gradle files
+        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.6'
+        classpath 'com.github.dcendents:android-maven-gradle-plugin:1.4.1'
     }
+
 }
 
 allprojects {
