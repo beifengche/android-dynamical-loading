@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 BiliBili Inc.
+ * Copyright (c) 2016. Kaede
  */
 
 package moe.studio.frontia.core;
@@ -16,34 +16,39 @@ import java.util.Collections;
 import java.util.List;
 
 import moe.studio.frontia.BuildConfig;
-import moe.studio.frontia.Frontia;
-import moe.studio.frontia.error.UpdatePluginException;
+import moe.studio.frontia.ext.PluginListener;
 import moe.studio.frontia.update.LocalPluginInfo;
-import moe.studio.frontia.update.PluginController;
 import moe.studio.frontia.update.RemotePluginInfo;
+
+import static org.apache.commons.io.FileUtils.deleteQuietly;
+import static moe.studio.frontia.core.PluginRequest.State.CANCELED;
+import static moe.studio.frontia.core.PluginRequest.State.UPD_NO_PLUGIN;
+import static moe.studio.frontia.core.PluginRequest.State.UPD_SUCCESS;
+import static moe.studio.frontia.core.PluginRequest.State.WTF;
+import static moe.studio.frontia.ext.PluginError.RetryError;
+import static moe.studio.frontia.ext.PluginError.UpdateError;
 
 /**
  * 插件任务请求实体类。
  */
 @SuppressWarnings("WeakerAccess")
-public abstract class PluginRequest {
+public abstract class PluginRequest<P extends Plugin> {
 
     private static final String TAG = "plugin.request";
     private static final int NO_VALUE = -2233;
 
     protected String mId;
-    protected int retry;
+    protected int mRetry;
     protected int mState;
     protected StringBuffer mLog;
     protected String mRemotePluginPath;
     protected String mLocalPluginPath;
     protected boolean mIsClearLocalPlugins;
 
-    protected Plugin mPlugin;
-    protected Frontia mManager;
-    protected PluginSetting mSetting;
+    protected P mPlugin;
+    protected PluginListener mListener;
+    protected PluginManager mManager;
     protected List<Exception> mExceptions;
-    protected final PluginController mController;
 
     // FOR ASSETS PLUGIN.
     protected int mAssetsVersion;
@@ -59,43 +64,54 @@ public abstract class PluginRequest {
     protected List<LocalPluginInfo> mLocalPlugins;
     protected List<? extends RemotePluginInfo> mRemotePlugins;
 
+    private final byte[] mLock;
+
     public PluginRequest() {
-        retry = NO_VALUE;
-        mState = States.REQUEST_WTF;
+        mState = WTF;
+        mRetry = NO_VALUE;
+        mLock = new byte[0];
         mLog = new StringBuffer(String.valueOf(mState));
-        mController = new PluginController();
-        mSetting = new PluginSetting.Builder()
-                .setDebugMode(BuildConfig.DEBUG)
-                .ignoreInstalledPlugin(BuildConfig.DEBUG)
-                .build();
     }
 
-    public PluginRequest attach(Frontia manager) {
+    public PluginRequest attach(PluginManager manager) {
         mManager = manager;
-        mSetting = manager.getSetting();
         return this;
     }
 
     /**
-     * 获取当前状态, 参考{@link States}
+     * 获取当前状态, 参考{@link State}
      */
     public int getState() {
-        return mState;
+        synchronized (mLock) {
+            return mState;
+        }
     }
 
     /**
-     * 获取插件任务的状态转换记录, 参考{@link States}
+     * 获取插件任务的状态转换记录, 参考{@link State}
      */
     public String getLog() {
         return mLog.toString();
     }
 
     /**
-     * 切换状态, 参考{@link States}
+     * 切换状态, 参考{@link State}
      */
     public PluginRequest switchState(int state) {
-        this.mState = state;
+        synchronized (mLock) {
+            mState = state;
+        }
         return marker(String.valueOf(state));
+    }
+
+    public void cancel() {
+        synchronized (mLock) {
+            switchState(CANCELED);
+        }
+    }
+
+    public boolean isCanceled() {
+        return mState == CANCELED;
     }
 
     /**
@@ -119,34 +135,32 @@ public abstract class PluginRequest {
     /**
      * 记录异常
      */
-    public PluginRequest markException(@NonNull Exception exception) {
+    public PluginRequest markException(@NonNull Exception e) {
         if (mExceptions == null) {
             mExceptions = new ArrayList<>();
         }
-        mExceptions.add(exception);
-        return marker(exception.getLocalizedMessage());
+        mExceptions.add(e);
+        return marker(e.getLocalizedMessage());
     }
 
     /**
      * 重试
      *
-     * @throws PluginErrors.RetryError 重试超标
+     * @throws RetryError 重试超标
      */
-    public void retry() throws PluginErrors.RetryError {
-        if (retry == NO_VALUE) {
-            retry = mSetting.getRetryCount();
-        }
-
-        if (--retry < 0) {
-            throw new PluginErrors.RetryError();
+    public void retry() throws RetryError {
+        if (--mRetry < 0) {
+            throw new RetryError();
         }
     }
 
     /**
-     * 插件请求是否失败
+     * 设置重试次数
      */
-    public boolean isUpdateFail() {
-        return States.isUpdateFail(mState);
+    public void setRetry(int count) {
+        if (count > 0) {
+            mRetry = count;
+        }
     }
 
     /**
@@ -216,29 +230,30 @@ public abstract class PluginRequest {
      * 获取插件
      */
     @Nullable
-    public Plugin getPlugin() {
+    public P getPlugin() {
         return mPlugin;
     }
 
     /**
      * 设置插件
      */
-    public void setPlugin(Plugin plugin) {
+    public void setPlugin(P plugin) {
         mPlugin = plugin;
     }
 
     /**
-     * 获取插件请求控制器
+     * 获取插件请求任务监听器
      */
-    public PluginController getController() {
-        return mController;
+    @Nullable
+    public PluginListener getListener() {
+        return mListener;
     }
 
     /**
      * 设置插件请求任务监听器
      */
-    public void setListener(PluginController.UpdateListener listener) {
-        mController.setListener(listener);
+    public void setListener(PluginListener listener) {
+        mListener = listener;
     }
 
     /**
@@ -286,8 +301,8 @@ public abstract class PluginRequest {
     /**
      * 设置插件下载URL
      */
-    public void setDownloadUrl(String downloadUrl) {
-        this.mDownloadUrl = downloadUrl;
+    public void setDownloadUrl(String url) {
+        this.mDownloadUrl = url;
     }
 
     /**
@@ -357,33 +372,32 @@ public abstract class PluginRequest {
      * 获取当前插件在线的所有版本信息
      * (必须由用户继承并实现该接口, 因为我压根不知道你的在线插件长什么样。)
      *
-     * @param context       Context
-     * @param pluginRequest 插件任务请求实体类(this)
-     * @throws UpdatePluginException 用户取消插件任务
+     * @param context Context
+     * @param request 插件任务请求实体类(this)
+     * @throws UpdateError 获取失败
      */
-    public abstract void getRemotePluginInfo(Context context, @NonNull PluginRequest pluginRequest)
-            throws UpdatePluginException;
+    public abstract void getRemotePluginInfo(Context context, @NonNull PluginRequest request)
+            throws UpdateError;
 
     /**
      * 获取当前插件本地已安装的所有版本信息
      */
-    public void getLocalPluginInfo(Context context, @NonNull PluginRequest pluginRequest) {
+    public void getLocalPluginInfo(@NonNull PluginRequest request) {
         String pluginId = getId();
         if (!TextUtils.isEmpty(pluginId)) {
-            pluginRequest.setLocalPlugins(getLocalPluginInfoById(context, pluginId));
+            request.setLocalPlugins(getLocalPluginInfoById(pluginId));
         }
     }
 
     /**
      * 获取当前插件本地已安装的所有版本信息
      *
-     * @param context  Context
-     * @param pluginId 插件ID
+     * @param id 插件ID
      * @return 已安装的所有版本列表
      */
-    protected List<LocalPluginInfo> getLocalPluginInfoById(@NonNull Context context, @NonNull String pluginId) {
+    protected List<LocalPluginInfo> getLocalPluginInfoById(@NonNull String id) {
         List<LocalPluginInfo> localPluginInfoList = new ArrayList<>();
-        String pluginDir = mManager.getInstaller().getPluginPath(pluginId);
+        String pluginDir = mManager.getInstaller().getPluginPath(id);
 
         File file = new File(pluginDir);
         if (!file.exists()) {
@@ -394,18 +408,18 @@ public abstract class PluginRequest {
         String[] versions = file.list();
         for (String version : versions) {
             if (TextUtils.isDigitsOnly(version)) {
-                // 版本文件夹只能是数字
-                if (mManager.getInstaller().isPluginInstalled(pluginId, version)) {
-                    // 插件版本已经安装,且合法
+                // Version can only be integer.
+                if (mManager.getInstaller().isInstalled(id, version)) {
+                    // Plugin has been already installed.
                     LocalPluginInfo item = new LocalPluginInfo();
-                    item.pluginId = pluginId;
+                    item.pluginId = id;
                     item.version = Integer.valueOf(version);
                     item.isValid = true;
                     localPluginInfoList.add(item);
                 }
             } else {
-                // 删除版本外文件
-                new File(pluginDir + File.separator + version).delete();
+                // Delete invalid file.
+                delete(new File(pluginDir + File.separator + version));
             }
         }
 
@@ -414,10 +428,10 @@ public abstract class PluginRequest {
         // Dump existing plugin versions.
         if (BuildConfig.DEBUG) {
             Log.v(TAG, "-");
-            Log.v(TAG, "Found local plugin \"" + pluginId + "\" :");
+            Log.v(TAG, "Found local plugin \"" + id + "\" :");
             for (LocalPluginInfo item : localPluginInfoList) {
                 Log.v(TAG, "Version =  " + item.version + ", path = "
-                        + mManager.getInstaller().getPluginInstallPath(pluginId,
+                        + mManager.getInstaller().getInstallPath(id,
                         String.valueOf(item.version)));
             }
             Log.v(TAG, "-");
@@ -428,35 +442,35 @@ public abstract class PluginRequest {
     /**
      * 当无法获取远程插件信息时候执行的回调, 默认使用本地最优插件(如果有)。
      */
-    public void doIllegalRemotePluginPolicy(@NonNull PluginRequest pluginRequest,
-                                            UpdatePluginException exception) {
-        pluginRequest.setId(getId());
-        useLocalAvailablePlugin(pluginRequest);
+    @SuppressWarnings("UnusedParameters")
+    public void onGetRemotePluginFail(@NonNull PluginRequest request, UpdateError e) {
+        request.setId(getId());
+        useLocalAvailablePlugin(request);
     }
 
     /**
      * 当插件更新失败时候执行的回调, 默认使用本地最优插件(如果有)。
      * 如果远程插件信息里配置了强制升级, 则丢弃本地插件, 插件加载失败。
      */
-    public void doUpdateFailPolicy(@NonNull PluginRequest pluginRequest, UpdatePluginException exception) {
-        if (!pluginRequest.forceUpdate()) {
-            // 非强制升级，使用本地可用插件
-            useLocalAvailablePlugin(pluginRequest);
+    @SuppressWarnings("UnusedParameters")
+    public void doUpdateFailPolicy(@NonNull PluginRequest request, UpdateError e) {
+        if (!request.forceUpdate()) {
+            // Use local installed plugin if the current plugin version is not fore-update.
+            useLocalAvailablePlugin(request);
         } else {
-            // 强制升级，无插件可用
-            pluginRequest.switchState(States.REQUEST_NO_AVAILABLE_PLUGIN);
+            // No available plugin.
+            request.switchState(UPD_NO_PLUGIN);
         }
     }
 
     /**
      * 使用版本可用的插件
      */
-    protected void useLocalAvailablePlugin(@NonNull PluginRequest pluginRequest) {
-        // 使用本地最优插件
-        String localPlugin = pluginRequest.getLocalPluginPath();
-        if (!TextUtils.isEmpty(localPlugin)) {
-            pluginRequest.setPluginPath(localPlugin);
-            pluginRequest.switchState(States.REQUEST_ALREADY_TO_LOAD_PLUGIN);
+    protected void useLocalAvailablePlugin(@NonNull PluginRequest request) {
+        String path = request.getLocalPluginPath();
+        if (!TextUtils.isEmpty(path)) {
+            request.setPluginPath(path);
+            request.switchState(UPD_SUCCESS);
         }
     }
 
@@ -464,49 +478,28 @@ public abstract class PluginRequest {
      * 加载插件时, 使用的插件实体类型。
      * (必须由用户继承并实现该接口, 只有你才知道你需要什么用的插件不是吗。)
      */
-    public abstract Plugin createPlugin(String pluginPath);
+    public abstract Plugin createPlugin(String path);
 
-    /**
-     * 插件请求认为被取消
-     */
-    public void onCancelRequest(Context context, PluginRequest pluginRequest) {
-        pluginRequest.switchState(States.REQUEST_CANCEL);
-        PluginController.UpdateListener listener = pluginRequest.getController().getListener();
-        if (listener != null) {
-            listener.onCanceled(pluginRequest.getState(), pluginRequest);
-        }
+    private static boolean delete(File file) {
+        return deleteQuietly(file);
     }
 
     /**
-     * 插件请求状态类
+     * 状态码
      */
-    public static class States {
+    public static class State {
 
-        // Request state code.
-        public static final int REQUEST_WTF = -1;                           // 诡异的错误
-        public static final int REQUEST_REQUEST_PLUGIN_INFO_FAIL = -2;      // 无法获取远程插件信息
-        public static final int REQUEST_NO_AVAILABLE_PLUGIN = -3;           // 没有插件可用(远程和本地均没有)
-        public static final int REQUEST_UPDATE_PLUGIN_FAIL = -4;            // 插件更新失败
-        public static final int REQUEST_LOAD_PLUGIN_FAIL = -5;              // 插件加载失败
-        public static final int REQUEST_GET_BEHAVIOUR_FAIL = -6;            // 插件加载完成, 但是无法获取插件行为接口(无法控制插件)
-        public static final int REQUEST_CANCEL = -7;                        // 任务被取消
+        public static final int WTF = -1;                           // 初始状态
+        public static final int CANCELED = -7;                      // 任务被取消
 
-        public static final int REQUEST_LOAD_PLUGIN_SUCCESS = 0;            // 插件已经加载成功
-        public static final int REQUEST_ALREADY_TO_LOAD_PLUGIN = 1;         // 插件更新完成、准备加载
-        public static final int REQUEST_NEED_EXTRACT_ASSETS_PLUGIN = 2;     // 准备从ASSETS释放插件
-        public static final int REQUEST_NEED_DOWNLOAD_ONLINE_PLUGIN = 3;    // 准备下载插件
+        public static final int UPD_REMOTE_INFO_FAIL = -2;          // 无法获取远程插件信息
+        public static final int UPD_NO_PLUGIN = -3;                 // 没有插件可用(在线和本地均没有)
+        public static final int UPD_UPDATE_PLUGIN_FAIL = -4;        // 插件更新失败
+        public static final int UPD_NEED_EXTRACT = 2;               // 准备从ASSETS释放插件
+        public static final int UPD_NEED_DOWNLOAD = 3;              // 准备下载插件
+        public static final int UPD_SUCCESS = 1;                    // 插件更新完成、准备加载
 
-        /**
-         * 当前请求任务是否失败
-         */
-        public static boolean isUpdateFail(int state) {
-            return state == States.REQUEST_CANCEL
-                    || state == States.REQUEST_REQUEST_PLUGIN_INFO_FAIL
-                    || state == States.REQUEST_UPDATE_PLUGIN_FAIL
-                    || state == States.REQUEST_LOAD_PLUGIN_FAIL
-                    || state == States.REQUEST_GET_BEHAVIOUR_FAIL
-                    || state == States.REQUEST_WTF;
-        }
+        public static final int LOA_SUCCESS = 0;                    // 插件已经加载成功
+        public static final int LOA_PLUGIN_FAIL = -5;               // 插件加载失败
     }
-
 }

@@ -1,10 +1,17 @@
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
 package moe.studio.frontia.core;
 
 import android.content.pm.PackageInfo;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 
 import java.io.File;
 import java.io.IOException;
+
+import moe.studio.frontia.ext.PluginError.InstallError;
 
 /**
  * 插件安装器
@@ -13,7 +20,7 @@ public interface PluginInstaller {
     /**
      * 插件插件是否安全
      */
-    boolean checkPluginSafety(String apkPath);
+    boolean checkSafety(String apkPath);
 
     /**
      * 插件插件是否安全
@@ -22,7 +29,7 @@ public interface PluginInstaller {
      * @param deleteIfInvalid 插件不安全时是否删除插件
      * @return 安全与否
      */
-    boolean checkPluginSafety(String apkPath, boolean deleteIfInvalid);
+    boolean checkSafety(String apkPath, boolean deleteIfInvalid);
 
     /**
      * 插件插件是否安全
@@ -32,12 +39,12 @@ public interface PluginInstaller {
      * @param deleteIfInvalid 插件不安全时是否删除插件
      * @return 安全与否
      */
-    boolean checkPluginSafety(String pluginId, String version, boolean deleteIfInvalid);
+    boolean checkSafety(String pluginId, String version, boolean deleteIfInvalid);
 
     /**
      * 删除插件
      */
-    void deletePlugin(String apkPath);
+    void delete(String apkPath);
 
     /**
      * 删除插件
@@ -45,7 +52,7 @@ public interface PluginInstaller {
      * @param pluginId 插件ID
      * @param version  插件版本
      */
-    void deletePlugin(String pluginId, String version);
+    void delete(String pluginId, String version);
 
     /**
      * 删除指定ID的插件的所有版本
@@ -53,11 +60,18 @@ public interface PluginInstaller {
     void deletePlugins(String pluginId);
 
     /**
+     * 文件空间是否足够
+     *
+     * @throws IOException 不够
+     */
+    void checkCapacity() throws IOException;
+
+    /**
      * 创建一个临时文件
      *
      * @param prefix 前缀
      * @return 临时文件
-     * @throws IOException
+     * @throws IOException 创建失败
      */
     File createTempFile(String prefix) throws IOException;
 
@@ -78,7 +92,7 @@ public interface PluginInstaller {
      * @param version  插件版本
      * @return 安装路径
      */
-    String getPluginInstallPath(String pluginId, String version);
+    String getInstallPath(String pluginId, String version);
 
     /**
      * 获取插件安装路径
@@ -86,7 +100,8 @@ public interface PluginInstaller {
      * @param apkPath 插件包路径
      * @return 安装路径
      */
-    String getPluginInstallPath(String apkPath);
+    @Nullable
+    String getInstallPath(String apkPath);
 
     /**
      * 判断指定版本的插件是否已经安装
@@ -95,15 +110,20 @@ public interface PluginInstaller {
      * @param version  插件版本
      * @return 安装与否
      */
-    boolean isPluginInstalled(String pluginId, String version);
+    boolean isInstalled(String pluginId, String version);
 
     /**
      * 判断插件是否已经安装
      */
-    boolean isPluginInstalled(String apkPath);
+    boolean isInstalled(String apkPath);
+
+    /**
+     * 安装指定路径上的插件
+     */
+    String install(String apkPath) throws InstallError;
 
     /**
      * 获取插件的PackageInfo
      */
-    PackageInfo getPluginInfo(String apkPath);
+    PackageInfo getPackageInfo(String apkPath);
 }

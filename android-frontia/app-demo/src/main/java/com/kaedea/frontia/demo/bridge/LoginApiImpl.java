@@ -1,6 +1,11 @@
-package me.kaede.mainapp.bridge;
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
+package com.kaedea.frontia.demo.bridge;
 
 import android.content.Context;
+
 import moe.studio.plugin.video_behavior.LoginApi;
 
 

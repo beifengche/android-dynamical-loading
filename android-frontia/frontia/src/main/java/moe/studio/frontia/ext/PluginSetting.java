@@ -1,32 +1,42 @@
-package moe.studio.frontia.core;
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
+package moe.studio.frontia.ext;
 
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.text.TextUtils;
 
+import moe.studio.frontia.BuildConfig;
+
+
 /**
  * 插件配置类
  */
-public class PluginSetting {
+@SuppressWarnings("WeakerAccess")
+public final class PluginSetting {
 
     private final int mMaxRetry;
     private final String mRootDir;
     private final String mOptDexDir;
     private final String mSoLibDir;
     private final String mTempSoLibDir;
+    private final String mTempFileSuf;
     private final String mPluginName;
     private final String mCustomSignature;
     private final boolean mIsDebugMode;
     private final boolean mIgnoreInstalledPlugin;
 
-    public PluginSetting(boolean isDebugMode,
-                         boolean ignoreInstalledPlugin,
-                         String customSignature, String rootDir,
-                         String optDexDir,
-                         String soLibDir,
-                         String tempSoLibDir,
-                         String pluginName,
-                         int maxRetry) {
+    private PluginSetting(boolean isDebugMode,
+                          boolean ignoreInstalledPlugin,
+                          String customSignature, String rootDir,
+                          String optDexDir,
+                          String soLibDir,
+                          String tempSoLibDir,
+                          String tempFileSuf,
+                          String pluginName,
+                          int maxRetry) {
         mIsDebugMode = isDebugMode;
         mIgnoreInstalledPlugin = ignoreInstalledPlugin;
         mCustomSignature = customSignature;
@@ -34,6 +44,7 @@ public class PluginSetting {
         mOptDexDir = optDexDir;
         mSoLibDir = soLibDir;
         mTempSoLibDir = tempSoLibDir;
+        mTempFileSuf = tempFileSuf;
         mPluginName = pluginName;
         mMaxRetry = maxRetry;
     }
@@ -82,6 +93,13 @@ public class PluginSetting {
     }
 
     /**
+     * 临时文件文件名后缀
+     */
+    public String getTempFileSuffix() {
+        return mTempFileSuf;
+    }
+
+    /**
      * 获取插件安装文件名
      */
     public String getPluginName() {
@@ -113,12 +131,13 @@ public class PluginSetting {
 
     public static class Builder {
 
-        static final int MAX_RETRY = 3;
-        static final String DIR_PLUGIN = "frontia";
-        static final String DIR_OPT_DEX = "dalvik-cache";
-        static final String DIR_SO_LIB = "lib";
-        static final String DIR_TEMP_SO = "temp";
-        static final String PLUGIN_NAME = "base-1.apk";
+        private static final int MAX_RETRY = 3;
+        private static final String DIR_PLUGIN = "frontia";
+        private static final String DIR_OPT_DEX = "code-cache";
+        private static final String DIR_SO_LIB = "lib";
+        private static final String DIR_TEMP_SO = "temp";
+        private static final String TEMP_FILE_SUFFIX = ".tmp";
+        private static final String PLUGIN_NAME = "base-1.apk";
 
         private int mMaxRetry = MAX_RETRY;
         private String mCustomSignature;
@@ -127,9 +146,9 @@ public class PluginSetting {
         private String mSoLibDir = DIR_SO_LIB;
         private String mTempSoLibDir = DIR_TEMP_SO;
         private String mPluginName = PLUGIN_NAME;
-        private boolean mIsDebugMode;
-        private boolean mIgnoreInstalledPlugin;
-
+        private String mTempFileSuf = TEMP_FILE_SUFFIX;
+        private boolean mIgnoreInstalledPlugin = false;
+        private boolean mIsDebugMode = BuildConfig.DEBUG;
 
         public Builder() {
         }
@@ -191,6 +210,14 @@ public class PluginSetting {
         }
 
         /**
+         * 设置临时文件文件名后缀
+         */
+        public Builder setTempFileSuffix(String tempFileSuf) {
+            mTempFileSuf = tempFileSuf;
+            return this;
+        }
+
+        /**
          * 设置插件安装文件名
          */
         public Builder setPluginName(@NonNull String pluginName) {
@@ -217,6 +244,7 @@ public class PluginSetting {
                     mOptDexDir,
                     mSoLibDir,
                     mTempSoLibDir,
+                    mTempFileSuf,
                     mPluginName,
                     mMaxRetry);
         }

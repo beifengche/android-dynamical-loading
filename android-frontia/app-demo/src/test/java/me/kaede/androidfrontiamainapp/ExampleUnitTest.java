@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
 package me.kaede.androidfrontiamainapp;
 
 import org.junit.Test;

@@ -1,4 +1,8 @@
-package com.kaedea.frontia.demo;
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
+package com.kaedea.frontia.demo.tencent;
 
 import moe.studio.frontia.update.RemotePluginInfo;
 

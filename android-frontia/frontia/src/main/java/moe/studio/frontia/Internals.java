@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
 package moe.studio.frontia;
 
 import android.annotation.SuppressLint;
@@ -38,6 +42,11 @@ import java.util.zip.ZipFile;
 
 import dalvik.system.DexClassLoader;
 
+import static org.apache.commons.io.FileUtils.deleteQuietly;
+import static moe.studio.frontia.ext.PluginError.ERROR_LOA_ASSET_MANAGER;
+import static moe.studio.frontia.ext.PluginError.ERROR_LOA_CLASSLOADER;
+import static moe.studio.frontia.ext.PluginError.LoadError;
+
 /**
  * 包名内部工具类。
  * 開けよ、我が闇の力！
@@ -51,39 +60,49 @@ import dalvik.system.DexClassLoader;
  * @version date 16/10/20
  */
 
-class Internals {
+final class Internals {
 
-    static class FileUtils {
-        public static final String TAG = "plugin.files";
+    final static class FileUtils {
+
+        private static final String TAG = "plugin.files";
 
         static void closeQuietly(Closeable closeable) {
             IOUtils.closeQuietly(closeable);
         }
 
-        static void delete(File file) {
-            deleteQuietly(file);
+        static boolean delete(String path) {
+            if (TextUtils.isEmpty(path)) {
+                return false;
+            }
+            return delete(new File(path));
         }
 
-        static boolean deleteQuietly(File file) {
-            return org.apache.commons.io.FileUtils.deleteQuietly(file);
+        static boolean delete(File file) {
+            return deleteQuietly(file);
         }
 
+        static boolean exist(String path) {
+            return !TextUtils.isEmpty(path) && (new File(path).exists());
+        }
+
+        @SuppressWarnings("ResultOfMethodCallIgnored")
         static void checkCreateFile(File file) throws IOException {
             if (file == null) {
                 throw new IOException("File is null.");
             }
             if (file.exists()) {
-                deleteQuietly(file);
+                delete(file);
             }
             File parentFile = file.getParentFile();
             if (!parentFile.exists()) {
-                parentFile.mkdirs(); // Ignore.
+                parentFile.mkdirs();
             }
             if (!file.createNewFile()) {
                 throw new IOException("Create file fail, file already exists.");
             }
         }
 
+        @SuppressWarnings("ResultOfMethodCallIgnored")
         static void checkCreateDir(File file) throws IOException {
             if (file == null) {
                 throw new IOException("Dir is null.");
@@ -92,13 +111,13 @@ class Internals {
                 if (file.isDirectory()) {
                     return;
                 }
-                if (!deleteQuietly(file)) {
+                if (!delete(file)) {
                     throw new IOException("Fail to delete existing file, file = "
                             + file.getAbsolutePath());
                 }
-                file.mkdir(); // Ignore.
+                file.mkdir();
             } else {
-                file.mkdirs(); // Ignore.
+                file.mkdirs();
             }
             if (!file.exists() || !file.isDirectory()) {
                 throw new IOException("Fail to create dir, dir = " + file.getAbsolutePath());
@@ -129,9 +148,7 @@ class Internals {
                 out.flush();
                 fd.sync();
             } catch (IOException e) {
-                if (Logger.DEBUG) {
-                    e.printStackTrace();
-                }
+                Logger.w(TAG, e);
             } finally {
                 closeQuietly(in);
                 closeQuietly(out);
@@ -157,9 +174,7 @@ class Internals {
                 out.flush();
                 fd.sync();
             } catch (IOException e) {
-                if (Logger.DEBUG) {
-                    e.printStackTrace();
-                }
+                Logger.w(TAG, e);
             } finally {
                 closeQuietly(in);
                 closeQuietly(out);
@@ -184,8 +199,8 @@ class Internals {
         }
     }
 
-    static class SoLibUtils {
-        static final String TAG = "plugin.so";
+    final static class SoLibUtils {
+        private static final String TAG = "plugin.so";
         private static final int BUFFER_SIZE = 1024 * 4;
 
         /**
@@ -198,7 +213,7 @@ class Internals {
                 throw new IOException("Apk file not found.");
             }
 
-            HashSet<String> result = new HashSet<String>(4);
+            HashSet<String> result = new HashSet<>(4);
             FileUtils.checkCreateDir(destDir);
             Logger.v(TAG, "copy so file to " + destDir.getAbsolutePath()
                     + ", apk = " + apkFile.getName());
@@ -250,9 +265,7 @@ class Internals {
                     }
                 }
             } catch (IOException e) {
-                if (Logger.DEBUG) {
-                    e.printStackTrace();
-                }
+                Logger.w(TAG, e);
                 throw new IOException("Unzip soLibs fail.", e);
             } finally {
                 IOUtils.closeQuietly(in);
@@ -262,7 +275,7 @@ class Internals {
                         zipFile.close();
                     } catch (IOException e) {
                         if (Logger.DEBUG) {
-                            e.printStackTrace();
+                            Logger.w(TAG, e);
                         }
                     }
                 }
@@ -286,6 +299,7 @@ class Internals {
          * @param destDir   目标so库目录
          * @return 是否成功
          */
+        @SuppressWarnings("deprecation")
         static boolean copySoLib(File sourceDir, String soLibName, File destDir)
                 throws IOException {
             boolean hasMatch = false;
@@ -346,8 +360,8 @@ class Internals {
         }
     }
 
-    // TODO: 2016/11/25 add PluginError.
-    static class ApkUtils {
+    final static class ApkUtils {
+        private static final String TAG = "plugin.apk";
 
         /**
          * 创建一个ClassLoader实例，用于加载插件里的类。
@@ -361,7 +375,7 @@ class Internals {
          */
         static DexClassLoader createClassLoader(Context context, String dexPath,
                                                 String optimizedDir, String nativeLibDir,
-                                                boolean isInDependent) {
+                                                boolean isInDependent) throws LoadError {
             ClassLoader parentClassLoader;
 
             if (isInDependent) {
@@ -376,10 +390,12 @@ class Internals {
             }
 
             try {
+                // TODO: 2016/11/30 Adding MultiDex support for plugin.
                 return new DexClassLoader(dexPath, optimizedDir, nativeLibDir, parentClassLoader);
+                
             } catch (Throwable e) {
-                e.printStackTrace();
-                throw new RuntimeException(e);
+                Logger.w(TAG, e);
+                throw new LoadError(e, ERROR_LOA_CLASSLOADER);
             }
         }
 
@@ -389,7 +405,7 @@ class Internals {
          * @param dexPath 插件路径
          * @return 插件AssetManager实例
          */
-        static AssetManager createAssetManager(String dexPath) {
+        static AssetManager createAssetManager(String dexPath) throws LoadError {
             try {
                 // TODO: 2016/11/25 We may need to support different api levels here.
                 AssetManager assetManager = AssetManager.class.newInstance();
@@ -398,8 +414,8 @@ class Internals {
                 return assetManager;
 
             } catch (Throwable e) {
-                e.printStackTrace();
-                throw new RuntimeException(e);
+                Logger.w(TAG, e);
+                throw new LoadError(e, ERROR_LOA_ASSET_MANAGER);
             }
         }
 
@@ -409,17 +425,16 @@ class Internals {
                     superRes.getConfiguration());
         }
 
-        static Class<?> loadClass(ClassLoader classLoader, String className) {
-            return loadClass(classLoader, className, false);
+        static Class<?> loadClass(ClassLoader classLoader, String className) throws Exception {
+            return loadClass(classLoader, className, true);
         }
 
         static Class<?> loadClass(ClassLoader classLoader, String className,
-                                  boolean shouldInitialize) {
+                                  boolean shouldInitialize) throws Exception {
             try {
                 return Class.forName(className, shouldInitialize, classLoader);
             } catch (Throwable e) {
-                e.printStackTrace();
-                throw new RuntimeException(e);
+                throw new Exception(e);
             }
         }
 
@@ -435,7 +450,7 @@ class Internals {
             try {
                 pkgInfo = pm.getPackageInfo(context.getPackageName(), flag);
             } catch (Throwable e) {
-                e.printStackTrace();
+                Logger.w(TAG, e);
             }
             return pkgInfo;
         }
@@ -452,7 +467,7 @@ class Internals {
         }
     }
 
-    static class SignatureUtils {
+    final static class SignatureUtils {
 
         private static String TAG = "plugin.signature";
         private static final int BUFFER_SIZE = 1024 * 4;
@@ -462,7 +477,7 @@ class Internals {
          */
         @Nullable
         @SuppressLint("PackageManagerGetSignatures")
-        public static Signature[] getSignatures(Context context) {
+        static Signature[] getSignatures(Context context) {
             Signature[] signatures = null;
             try {
                 PackageInfo pkgInfo = context.getPackageManager()
@@ -470,8 +485,8 @@ class Internals {
                 signatures = pkgInfo.signatures;
 
             } catch (PackageManager.NameNotFoundException e) {
-                e.printStackTrace();
                 Logger.w(TAG, "Can not get signature, error = " + e.getLocalizedMessage());
+                Logger.w(TAG, e);
             }
             return signatures;
         }
@@ -526,15 +541,13 @@ class Internals {
                         Logger.w(TAG, "INSTALL_PARSE_FAILED_NO_CERTIFICATES");
                         return null;
                     }
-                    if (BuildConfig.DEBUG) {
+                    if (Logger.DEBUG) {
                         Logger.v(TAG, "File " + apkPath + ": entry=" + jarEntry
-                                + " certs=" + (certs != null ? certs.length : 0));
-                        if (certs != null) {
-                            for (Certificate cert : certs) {
-                                Logger.d(TAG, "  Public key: "
-                                        + Arrays.toString(cert.getPublicKey().getEncoded())
-                                        + " " + cert.getPublicKey());
-                            }
+                                + " certs=" + certs.length);
+                        for (Certificate cert : certs) {
+                            Logger.d(TAG, "  Public key: "
+                                    + Arrays.toString(cert.getPublicKey().getEncoded())
+                                    + " " + cert.getPublicKey());
                         }
                     }
                 } else {
@@ -545,7 +558,7 @@ class Internals {
                         if (je.getName().startsWith("META-INF/")) continue;
                         Certificate[] localCerts = loadCertificates(jarFile, je,
                                 readBuffer);
-                        if (BuildConfig.DEBUG) {
+                        if (Logger.DEBUG) {
                             Logger.v(TAG, "File " + apkPath + " entry " + je.getName()
                                     + ": certs=" + Arrays.toString(certs) + " ("
                                     + (certs != null ? certs.length : 0) + ")");
@@ -594,19 +607,19 @@ class Internals {
                     return null;
                 }
             } catch (CertificateEncodingException e) {
-                e.printStackTrace();
                 Logger.w(TAG, "Exception reading " + apkPath);
                 Logger.w(TAG, "INSTALL_PARSE_FAILED_CERTIFICATE_ENCODING");
+                Logger.w(TAG, e);
                 return null;
             } catch (IOException e) {
-                e.printStackTrace();
                 Logger.w(TAG, "Exception reading " + apkPath);
                 Logger.w(TAG, "INSTALL_PARSE_FAILED_CERTIFICATE_ENCODING");
+                Logger.w(TAG, e);
                 return null;
             } catch (RuntimeException e) {
-                e.printStackTrace();
                 Logger.w(TAG, "Exception reading " + apkPath);
                 Logger.w(TAG, "INSTALL_PARSE_FAILED_UNEXPECTED_EXCEPTION");
+                Logger.w(TAG, e);
                 return null;
             } finally {
                 if (jarFile != null) {
@@ -617,6 +630,7 @@ class Internals {
         }
 
 
+        @SuppressWarnings("StatementWithEmptyBody")
         private static Certificate[] loadCertificates(JarFile jarFile, JarEntry je, byte[] readBuffer) {
             InputStream in = null;
             try {
@@ -629,16 +643,16 @@ class Internals {
                 return je != null ? je.getCertificates() : null;
 
             } catch (IOException | RuntimeException e) {
-                e.printStackTrace();
                 Logger.w(TAG, "Exception reading " + je.getName() + " in "
                         + jarFile.getName());
+                Logger.w(TAG, e);
             } finally {
                 FileUtils.closeQuietly(in);
             }
             return null;
         }
 
-        public static boolean isSignaturesSame(Signature[] s1, Signature[] s2) {
+        static boolean isSignaturesSame(Signature[] s1, Signature[] s2) {
             if (s1 == null || s2 == null) {
                 return false;
             }

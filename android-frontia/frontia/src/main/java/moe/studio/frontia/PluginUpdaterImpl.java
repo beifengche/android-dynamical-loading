@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 BiliBili Inc.
+ * Copyright (c) 2016. Kaede
  */
 
 package moe.studio.frontia;
@@ -18,15 +18,29 @@ import moe.studio.downloader.DownloadRequest;
 import moe.studio.downloader.SyncDownloadProcessorImpl;
 import moe.studio.downloader.core.DownloadListener;
 import moe.studio.downloader.core.DownloadProcessor;
-import moe.studio.frontia.core.PluginErrors;
+import moe.studio.frontia.Internals.ApkUtils;
+import moe.studio.frontia.Internals.FileUtils;
 import moe.studio.frontia.core.PluginManager;
 import moe.studio.frontia.core.PluginRequest;
 import moe.studio.frontia.core.PluginUpdater;
-import moe.studio.frontia.error.CancelPluginException;
-import moe.studio.frontia.error.UpdatePluginException;
+import moe.studio.frontia.ext.PluginError.CancelError;
+import moe.studio.frontia.ext.PluginError.UpdateError;
 import moe.studio.frontia.update.LocalPluginInfo;
-import moe.studio.frontia.update.PluginController;
 import moe.studio.frontia.update.RemotePluginInfo;
+
+import static moe.studio.frontia.core.PluginRequest.State.CANCELED;
+import static moe.studio.frontia.core.PluginRequest.State.UPD_NEED_DOWNLOAD;
+import static moe.studio.frontia.core.PluginRequest.State.UPD_NEED_EXTRACT;
+import static moe.studio.frontia.core.PluginRequest.State.UPD_NO_PLUGIN;
+import static moe.studio.frontia.core.PluginRequest.State.UPD_REMOTE_INFO_FAIL;
+import static moe.studio.frontia.core.PluginRequest.State.UPD_SUCCESS;
+import static moe.studio.frontia.core.PluginRequest.State.UPD_UPDATE_PLUGIN_FAIL;
+import static moe.studio.frontia.ext.PluginError.ERROR_UPD_CANCELED;
+import static moe.studio.frontia.ext.PluginError.ERROR_UPD_CAPACITY;
+import static moe.studio.frontia.ext.PluginError.ERROR_UPD_DOWNLOAD;
+import static moe.studio.frontia.ext.PluginError.ERROR_UPD_EXTRACT;
+import static moe.studio.frontia.ext.PluginError.ERROR_UPD_NO_TEMP;
+import static moe.studio.frontia.ext.PluginError.RetryError;
 
 /**
  * 插件更新器
@@ -35,6 +49,7 @@ import moe.studio.frontia.update.RemotePluginInfo;
  * 所以把获取目标插件的行为抽象成“更新插件”
  */
 class PluginUpdaterImpl implements PluginUpdater {
+
     private static final String TAG = "plugin.update";
 
     private static final int RESPONSE_SUCCESS = 0;
@@ -43,7 +58,7 @@ class PluginUpdaterImpl implements PluginUpdater {
     private final Context mContext;
     private final PluginManager mManager;
 
-    public PluginUpdaterImpl(Context context, PluginManager manager) {
+    PluginUpdaterImpl(Context context, PluginManager manager) {
         mContext = context.getApplicationContext();
         mManager = manager;
     }
@@ -58,124 +73,154 @@ class PluginUpdaterImpl implements PluginUpdater {
      */
     @Override
     public PluginRequest updatePlugin(@NonNull PluginRequest request) {
-        Logger.d(TAG, "[updatePlugin]");
+        Logger.i(TAG, "Start update, id = " + request.getId());
         request.marker("Update");
+        onPreUpdate(request);
 
         // Request remote plugin.
         requestPlugin(request);
 
-        PluginController controller = request.getController();
-        PluginController.UpdateListener listener = controller.getListener();
-        if (listener != null) {
-            listener.onPreUpdate(request.getState(), request);
+        if (request.isCanceled()) {
+            onCanceled(request);
+            return request;
         }
 
-        if (request.getState() == PluginRequest.States.REQUEST_NEED_EXTRACT_ASSETS_PLUGIN) {
+        if (request.getState() == UPD_NEED_EXTRACT) {
+            // Check capacity.
+            try {
+                mManager.getInstaller().checkCapacity();
+            } catch (IOException e) {
+                Logger.w(TAG, e);
+                UpdateError error = new UpdateError(e, ERROR_UPD_CAPACITY);
+                onError(request, error);
+                return request;
+            }
+
             // Extract plugin from assets.
             File tempFile;
             try {
                 tempFile = mManager.getInstaller().createTempFile(request.getId());
             } catch (IOException e) {
                 Logger.v(TAG, "Can not get temp file, error = " + e.getLocalizedMessage());
-                e.printStackTrace();
-                request.switchState(PluginRequest.States.REQUEST_UPDATE_PLUGIN_FAIL);
-                request.markException(e);
-                request.doUpdateFailPolicy(request,
-                        new UpdatePluginException("Can not get temp file.", e));
+                Logger.w(TAG, e);
+                UpdateError error = new UpdateError(e, ERROR_UPD_NO_TEMP);
+                onError(request, error);
                 return request;
             }
 
             int retry = 0;
-            Exception exception = null;
+            request.setRetry(mManager.getSetting().getRetryCount());
+
             while (true) {
-                if (controller.isCanceled()) {
-                    request.onCancelRequest(mContext, request);
+                if (request.isCanceled()) {
+                    onCanceled(request);
                     return request;
                 }
 
                 try {
-                    Internals.FileUtils.copyFileFromAsset(mContext, request.getAssetsPath(), tempFile);
-                    request.switchState(PluginRequest.States.REQUEST_ALREADY_TO_LOAD_PLUGIN);
-                    request.setPluginPath(tempFile.getAbsolutePath());
+                    FileUtils.copyFileFromAsset(mContext, request.getAssetsPath(), tempFile);
                     Logger.v(TAG, "Extract plugin from assets success.");
-                    break;
+                    request.setPluginPath(tempFile.getAbsolutePath());
+                    request.switchState(UPD_SUCCESS);
+                    onPostUpdate(request);
+                    return request;
 
                 } catch (IOException e) {
-                    exception = e;
-                    e.printStackTrace();
+                    Logger.w(TAG, e);
                     try {
                         request.retry();
                         Logger.v(TAG, "Extract fail, retry " + (retry++));
                         request.marker("Retry extract " + retry);
-                    } catch (PluginErrors.RetryError retryError) {
-                        break;
+                    } catch (RetryError retryError) {
+                        Logger.v(TAG, "Extract plugin from assets fail, error = "
+                                + e.toString());
+                        UpdateError error = new UpdateError(e, ERROR_UPD_EXTRACT);
+                        onError(request, error);
+                        return request;
                     }
                 }
             }
 
-            if (exception != null) {
-                // Extract fail.
-                Logger.v(TAG, "Extract plugin from assets fail, error = " + exception.getLocalizedMessage());
-                request.switchState(PluginRequest.States.REQUEST_UPDATE_PLUGIN_FAIL);
-                request.markException(exception);
-                request.doUpdateFailPolicy(request,
-                        new UpdatePluginException("Extract plugin from assets fail", exception));
+        } else if (request.getState() == UPD_NEED_DOWNLOAD) {
+            // Check capacity.
+            try {
+                mManager.getInstaller().checkCapacity();
+            } catch (IOException e) {
+                Logger.w(TAG, e);
+                UpdateError error = new UpdateError(e, ERROR_UPD_CAPACITY);
+                onError(request, error);
+                return request;
             }
 
-        } else if (request.getState() == PluginRequest.States.REQUEST_NEED_DOWNLOAD_ONLINE_PLUGIN) {
             // Download plugin from online.
             File tempFile;
             try {
                 tempFile = mManager.getInstaller().createTempFile(request.getId());
             } catch (IOException e) {
                 Logger.v(TAG, "Can not get temp file, error = " + e.getLocalizedMessage());
-                e.printStackTrace();
-                request.switchState(PluginRequest.States.REQUEST_UPDATE_PLUGIN_FAIL);
-                request.markException(e);
-                request.doUpdateFailPolicy(request,
-                        new UpdatePluginException("Can not get temp file.", e));
-                return request;
-            }
-
-            if (controller.isCanceled()) {
-                request.onCancelRequest(mContext, request);
+                Logger.w(TAG, e);
+                UpdateError error = new UpdateError(e, ERROR_UPD_NO_TEMP);
+                onError(request, error);
                 return request;
             }
 
             try {
                 downloadPlugin(request, tempFile);
-                request.switchState(PluginRequest.States.REQUEST_ALREADY_TO_LOAD_PLUGIN);
+                Logger.v(TAG, "Download plugin online success.");
                 request.setPluginPath(tempFile.getAbsolutePath());
-                Logger.v(TAG, "[updatePlugin]download plugin online success");
+                request.switchState(UPD_SUCCESS);
+                onPostUpdate(request);
+                return request;
 
-            } catch (UpdatePluginException e) {
-                // Download fail.
-                Logger.v(TAG, "Download plugin fail, error = " + e.getLocalizedMessage());
-                e.printStackTrace();
-                request.marker("Download fail.");
-                request.switchState(PluginRequest.States.REQUEST_UPDATE_PLUGIN_FAIL);
-                request.markException(e);
-                request.doUpdateFailPolicy(request,
-                        new UpdatePluginException("download plugin online fail", e));
-            } catch (CancelPluginException e) {
-                request.onCancelRequest(mContext, request);
+            } catch (UpdateError error) {
+                Logger.v(TAG, "Download plugin fail, error = " + error.getLocalizedMessage());
+                Logger.w(TAG, error);
+                request.markException(error);
+                onError(request, error);
+                return request;
+            } catch (CancelError e) {
+                onCanceled(request);
                 return request;
             }
-        }
 
-        if (listener != null) {
-            listener.onPostUpdate(request.getState(), request);
+        } else {
+            onPostUpdate(request);
+            return request;
         }
-        return request;
+    }
+
+    private void onPreUpdate(PluginRequest request) {
+        Logger.i(TAG, "onPreUpdate state = " + request.getState());
+        mManager.getCallback().preUpdate(request);
+    }
+
+    private void onCanceled(PluginRequest request) {
+        Logger.i(TAG, "onCanceled state = " + request.getState());
+        request.switchState(CANCELED);
+        mManager.getCallback().onCancel(request);
+    }
+
+    private void onError(PluginRequest request, UpdateError error) {
+        Logger.i(TAG, "onError state = " + request.getState());
+        request.switchState(UPD_UPDATE_PLUGIN_FAIL);
+        request.markException(error);
+        request.doUpdateFailPolicy(request, error);
+        onPostUpdate(request);
+    }
+
+    private void onPostUpdate(PluginRequest request) {
+        Logger.i(TAG, "onPostUpdate state = " + request.getState());
+        mManager.getCallback().postUpdate(request);
     }
 
     /**
-     * "请求插件信息"
-     * 1. 需要实现获取远程插件信息的逻辑getRemotePluginInfo；
-     * 2. 需要实现获取本地插件信息的逻辑getLocalPluginInfo；
-     * 3. doUpdatePolicy根据远程和本地插件的信息，计算出最优的更新策略；
-     * 4. 需要实现获取不到远程插件信息时本地的更新策略doIllegalRemotePluginInfoPolicy；
+     * 请求插件信息:
+     * 1. 需要实现获取远程插件信息的逻辑 getRemotePluginInfo；
+     * 2. 需要实现获取本地插件信息的逻辑 getLocalPluginInfo；
+     * 3. doUpdatePolicy 根据远程和本地插件的信息，计算出最优的更新策略；
+     * 4. 需要实现获取不到远程插件信息时本地的更新策略 onGetRemotePluginFail；
      */
+    @SuppressWarnings("unchecked")
     private PluginRequest requestPlugin(PluginRequest request) {
         Logger.d(TAG, "Request remote plugin info.");
 
@@ -185,13 +230,13 @@ class PluginUpdaterImpl implements PluginUpdater {
         }
 
         // Get local existing plugin info.
-        request.getLocalPluginInfo(mContext, request);
+        request.getLocalPluginInfo(request);
 
         List<LocalPluginInfo> localPlugins = request.getLocalPlugins();
         if (localPlugins != null && localPlugins.size() > 0) {
             LocalPluginInfo localPluginInfo = localPlugins.get(0);
             // Getting plugin installed path.
-            String installPath = mManager.getInstaller().getPluginInstallPath(localPluginInfo.pluginId,
+            String installPath = mManager.getInstaller().getInstallPath(localPluginInfo.pluginId,
                     String.valueOf(localPluginInfo.version));
             request.setPluginPath(installPath);
             request.setLocalPluginPath(installPath);
@@ -216,17 +261,18 @@ class PluginUpdaterImpl implements PluginUpdater {
             // Success.
             doUpdatePolicy(RESPONSE_SUCCESS, request);
 
-        } catch (UpdatePluginException e) {
-            e.printStackTrace();
-            Logger.w(TAG, "Request remote plugin info fail, error = " + e.getLocalizedMessage());
-            request.switchState(PluginRequest.States.REQUEST_REQUEST_PLUGIN_INFO_FAIL);
+        } catch (UpdateError e) {
+            Logger.w(TAG, "Request remote plugin info fail, error = " + e.toString());
+            Logger.w(TAG, e);
+            request.switchState(UPD_REMOTE_INFO_FAIL);
             request.markException(e);
-            request.doIllegalRemotePluginPolicy(request, e);
+            request.onGetRemotePluginFail(request, e);
         }
 
         return request;
     }
 
+    @SuppressWarnings({"unchecked", "deprecation"})
     private void doUpdatePolicy(int responseCode, @NonNull PluginRequest request) {
         if (responseCode == RESPONSE_SUCCESS) {
             if (request.isFromAssets()) {
@@ -234,17 +280,17 @@ class PluginUpdaterImpl implements PluginUpdater {
                 Logger.v(TAG, "Using plugin from assets");
 
                 String apkPath = mManager.getInstaller()
-                        .getPluginInstallPath(request.getId(),
+                        .getInstallPath(request.getId(),
                                 String.valueOf(request.getAssetsVersion()));
 
-                if (mManager.getInstaller().isPluginInstalled(apkPath)) {
+                if (mManager.getInstaller().isInstalled(apkPath)) {
                     // The current version of plugin has been installed before.
-                    request.switchState(PluginRequest.States.REQUEST_ALREADY_TO_LOAD_PLUGIN);
+                    request.switchState(UPD_SUCCESS);
                     request.setPluginPath(apkPath);
 
                 } else {
                     // Should extract plugin form assets.
-                    request.switchState(PluginRequest.States.REQUEST_NEED_EXTRACT_ASSETS_PLUGIN);
+                    request.switchState(UPD_NEED_EXTRACT);
                     Logger.v(TAG, "Extract plugin from assets, path = " + request.getAssetsPath());
                 }
 
@@ -252,12 +298,12 @@ class PluginUpdaterImpl implements PluginUpdater {
                 // Using online plugin.
                 Logger.v(TAG, "Using online plugin.");
 
-                // 执行升级策略。
-                // 获取最佳的在线插件信息（版本最新，且最低APP_BUILD要求小于本APP版本）。
+                // Calculate the best remote plugin version.
+                // (Latest version & APP_BUILD is meet.)
                 List<? extends RemotePluginInfo> remotePluginInfoList = request.getRemotePlugins();
                 RemotePluginInfo bestPlugin = null;
                 int appBuild = Integer.MAX_VALUE;
-                PackageInfo localPackageInfo = Internals.ApkUtils.getLocalPackageInfo(mContext);
+                PackageInfo localPackageInfo = ApkUtils.getLocalPackageInfo(mContext);
 
                 if (mManager.getSetting().isDebugMode() && localPackageInfo != null) {
                     appBuild = localPackageInfo.versionCode;
@@ -265,16 +311,18 @@ class PluginUpdaterImpl implements PluginUpdater {
                 Logger.v(TAG, "App build = " + appBuild);
 
                 // Get the best plugin version.
-                for (RemotePluginInfo pluginInfo : remotePluginInfoList) {
-                    if (pluginInfo.enable && pluginInfo.minAppBuild <= appBuild) {
-                        bestPlugin = pluginInfo;
-                        break;
+                if (remotePluginInfoList != null) {
+                    for (RemotePluginInfo pluginInfo : remotePluginInfoList) {
+                        if (pluginInfo.enable && pluginInfo.minAppBuild <= appBuild) {
+                            bestPlugin = pluginInfo;
+                            break;
+                        }
                     }
                 }
 
                 if (bestPlugin == null) {
                     Logger.v(TAG, "No available plugin, abort.");
-                    request.switchState(PluginRequest.States.REQUEST_NO_AVAILABLE_PLUGIN);
+                    request.switchState(UPD_NO_PLUGIN);
 
                 } else {
                     LocalPluginInfo bestLocalPlugin = chooseBestPluginFromLocal(
@@ -285,7 +333,7 @@ class PluginUpdaterImpl implements PluginUpdater {
                                 + bestPlugin.version + ", url = "
                                 + bestPlugin.downloadUrl);
 
-                        request.switchState(PluginRequest.States.REQUEST_NEED_DOWNLOAD_ONLINE_PLUGIN);
+                        request.switchState(UPD_NEED_DOWNLOAD);
                         request.setDownloadUrl(bestPlugin.downloadUrl);
                         request.setFileSize(bestPlugin.fileSize);
                         request.setForUpdate(bestPlugin.isForceUpdate);
@@ -293,10 +341,10 @@ class PluginUpdaterImpl implements PluginUpdater {
                     } else {
                         // The best plugin version has been installed before.
                         Logger.v(TAG, "Use local plugin, version = " + bestLocalPlugin.version);
-                        String apkPath = mManager.getInstaller().getPluginInstallPath(bestLocalPlugin.pluginId,
+                        String apkPath = mManager.getInstaller().getInstallPath(bestLocalPlugin.pluginId,
                                 String.valueOf(bestLocalPlugin.version));
 
-                        request.switchState(PluginRequest.States.REQUEST_ALREADY_TO_LOAD_PLUGIN);
+                        request.switchState(UPD_SUCCESS);
                         request.setPluginPath(apkPath);
                     }
                 }
@@ -304,8 +352,8 @@ class PluginUpdaterImpl implements PluginUpdater {
 
         } else if (responseCode == RESPONSE_ILLEGAL_ONLINE_PLUGIN) {
             Logger.v(TAG, "Request remote plugin info fail, illegal online plugin.");
-            request.switchState(PluginRequest.States.REQUEST_NO_AVAILABLE_PLUGIN);
-            request.doIllegalRemotePluginPolicy(request, null);
+            request.switchState(UPD_NO_PLUGIN);
+            request.onGetRemotePluginFail(request, null);
         }
     }
 
@@ -322,10 +370,11 @@ class PluginUpdaterImpl implements PluginUpdater {
         return null;
     }
 
+    @SuppressWarnings("deprecation")
     private void downloadPlugin(final PluginRequest request, File destFile)
-            throws UpdatePluginException, CancelPluginException {
+            throws UpdateError, CancelError {
+
         // Using FileDownloader to complete the download task.
-        final PluginController controller = request.getController();
         final long fileSize = request.getFileSize();
 
         final String[] errorMsg = {null};
@@ -334,6 +383,8 @@ class PluginUpdaterImpl implements PluginUpdater {
                 .setContentLength(fileSize)
                 .setDestFile(destFile)
                 .setDeleteDestFileOnFailure(true)
+                // TODO: 2016/11/30 Retry
+                //.setRetryPolicy()
                 .setListener(new DownloadListener() {
                     @Override
                     public void onComplete(DownloadRequest request) {
@@ -352,13 +403,13 @@ class PluginUpdaterImpl implements PluginUpdater {
                         // notify progress
                         if (fileSize > 0) {
                             Logger.v(TAG, "Notify progress  = " + progress);
-                            controller.notifyProgress(request, (float) progress / 100F);
+                            mManager.getCallback().notifyProgress(request, (float) progress / 100F);
                         }
                     }
 
                     @Override
                     public boolean isCanceled() {
-                        return controller.isCanceled();
+                        return request.isCanceled();
                     }
 
                 });
@@ -368,11 +419,11 @@ class PluginUpdaterImpl implements PluginUpdater {
         processor.attach(mContext);
         processor.add(downloadRequest);
 
-        if (controller.isCanceled()) {
-            throw new CancelPluginException("Download is canceled");
+        if (request.isCanceled()) {
+            throw new CancelError(ERROR_UPD_CANCELED);
 
         } else if (!TextUtils.isEmpty(errorMsg[0])) {
-            throw new UpdatePluginException(errorMsg[0]);
+            throw new UpdateError(errorMsg[0], ERROR_UPD_DOWNLOAD);
         }
     }
 }

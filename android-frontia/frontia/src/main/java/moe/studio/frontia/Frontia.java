@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 BiliBili Inc.
+ * Copyright (c) 2016. Kaede
  */
 
 package moe.studio.frontia;
@@ -8,8 +8,10 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -20,24 +22,31 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import moe.studio.frontia.bridge.plugin.BaseBehaviour;
 import moe.studio.frontia.core.Plugin;
+import moe.studio.frontia.core.PluginBehavior;
 import moe.studio.frontia.core.PluginInstaller;
 import moe.studio.frontia.core.PluginLoader;
 import moe.studio.frontia.core.PluginManager;
 import moe.studio.frontia.core.PluginRequest;
-import moe.studio.frontia.core.PluginSetting;
 import moe.studio.frontia.core.PluginUpdater;
-import moe.studio.frontia.error.IllegalPluginException;
+import moe.studio.frontia.ext.PluginCallback;
+import moe.studio.frontia.ext.PluginError.LoadError;
+import moe.studio.frontia.ext.PluginSetting;
+
+import static moe.studio.frontia.Frontia.Mode.MODE_LOAD;
+import static moe.studio.frontia.Frontia.Mode.MODE_UPDATE;
+import static moe.studio.frontia.ext.PluginError.ERROR_LOA_NOT_LOADED;
 
 /**
- * 插件管理器：
- * 1. 启动插件更新、安装、加载任务；
- * 2. 提供对任务的控制；
+ * Frontia
+ * 1. 启动插件更新、安装、加载任务;
+ * 2. 提供对任务的控制;
+ * 3. 提供获取插件的方法;
  * <p>
  * 乗り越えれ、Frontier！我が目立ては「Star Oceans」！
  */
-public class Frontia implements PluginManager {
+@SuppressWarnings({"WeakerAccess", "SuspiciousMethodCalls", "unchecked"})
+public final class Frontia implements PluginManager {
 
     private static final String TAG = "plugin.manager";
     private static Frontia sInstance;
@@ -54,16 +63,18 @@ public class Frontia implements PluginManager {
     }
 
     private boolean mHasInit = false;
+    private final byte[] mLock = new byte[0];
     private PluginLoader mLoader;
     private PluginUpdater mUpdater;
     private PluginInstaller mInstaller;
     private PluginSetting mSetting;
-    private Handler mCallbackHandler;
+    private PluginCallback mController;
     private ExecutorService mExecutorService;
-    private final Map<Class<? extends PluginRequest>, RequestState> mRequestStates;
+    private Map<Class<? extends PluginBehavior>, Plugin> mLoadedPlugins;
+    private Map<Class<? extends PluginRequest>, RequestState> mRequestStates;
 
-    private Frontia() {
-        mRequestStates = new HashMap<>();
+    public Frontia() {
+
     }
 
     /**
@@ -71,26 +82,26 @@ public class Frontia implements PluginManager {
      */
     public void init(Context context) {
         if (!mHasInit) {
-            synchronized (mRequestStates) {
+            synchronized (mLock) {
                 if (!mHasInit) {
                     mHasInit = true;
                     mSetting = new PluginSetting.Builder()
                             .setDebugMode(Logger.DEBUG)
                             .ignoreInstalledPlugin(Logger.DEBUG)
                             .build();
-                    mCallbackHandler = new Handler(Looper.getMainLooper());
                     mExecutorService = Executors.newSingleThreadExecutor();
                     mLoader = new PluginLoaderImpl(context, this);
                     mUpdater = new PluginUpdaterImpl(context, this);
                     mInstaller = new PluginInstallerImpl(context, this);
+                    mController = new CallbackDelivery(this, new Handler(Looper.getMainLooper()));
                     printDebugInfo();
                     return;
                 }
             }
         }
-        Logger.w(TAG, "Frontia has already been initialized.");
-    }
 
+        throw new RuntimeException("Frontia has already been initialized.");
+    }
 
     /**
      * 初始化
@@ -100,21 +111,22 @@ public class Frontia implements PluginManager {
      */
     public void init(Context context, @NonNull PluginSetting setting) {
         if (!mHasInit) {
-            synchronized (mRequestStates) {
+            synchronized (mLock) {
                 if (!mHasInit) {
                     mHasInit = true;
                     mSetting = setting;
-                    mCallbackHandler = new Handler(Looper.getMainLooper());
                     mExecutorService = Executors.newSingleThreadExecutor();
                     mLoader = new PluginLoaderImpl(context, this);
                     mUpdater = new PluginUpdaterImpl(context, this);
                     mInstaller = new PluginInstallerImpl(context, this);
+                    mController = new CallbackDelivery(this, new Handler(Looper.getMainLooper()));
                     printDebugInfo();
                     return;
                 }
             }
         }
-        Logger.w(TAG, "Frontia has already been initialized.");
+
+        throw new RuntimeException("Frontia has already been initialized.");
     }
 
     /**
@@ -128,40 +140,81 @@ public class Frontia implements PluginManager {
     public void init(Context context, @NonNull PluginSetting setting,
                      @NonNull Handler callbackHandler, @NonNull ExecutorService executorService) {
         if (!mHasInit) {
-            synchronized (mRequestStates) {
+            synchronized (mLock) {
                 if (!mHasInit) {
                     mHasInit = true;
                     mSetting = setting;
-                    mCallbackHandler = callbackHandler;
                     mExecutorService = executorService;
                     mLoader = new PluginLoaderImpl(context, this);
                     mUpdater = new PluginUpdaterImpl(context, this);
                     mInstaller = new PluginInstallerImpl(context, this);
+                    mController = new CallbackDelivery(this, callbackHandler);
                     printDebugInfo();
                     return;
                 }
             }
         }
-        Logger.w(TAG, "Frontia has already been initialized.");
+
+        throw new RuntimeException("Frontia has already been initialized.");
     }
 
 
-    @Override
+    /**
+     * 同步加载一个插件
+     *
+     * @param request 插件请求
+     * @param mode    加载模式, 参考{@link Mode}
+     * @return 当前插件请求
+     */
     public PluginRequest add(@NonNull PluginRequest request, int mode) {
-        Task.doing(this, mode).doing(request);
-        Logger.i(TAG, "request id = " + request.getId()
-                + ", state log = " + request.getLog());
+        return add(request, JobToDo.doing(this, mode));
+    }
+
+    /**
+     * 同步加载一个插件
+     *
+     * @param request 插件请求
+     * @param job     做神马, 参考{@link Mode}
+     * @return 当前插件请求
+     */
+    public PluginRequest add(@NonNull PluginRequest request, @NonNull JobToDo job) {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
+        Logger.i(TAG, "request id = " + request.getId() + ", state log = " + request.getLog());
+        job.doing(request.attach(this));
         return request;
     }
 
     /**
      * 异步加载一个插件
+     * <p>
+     * 如果需要获取一个已经正在运行的插件加载任务的状态, 可以通过{@link #getRequestState(Class)}获得。
      *
      * @param request 插件请求
      * @param mode    加载模式, 参考{@linkplain Frontia.Mode}
      * @return 当前插件请求
      */
-    public RequestState addAsync(@NonNull final PluginRequest request, final int mode) {
+    public RequestState addAsync(@NonNull PluginRequest request, int mode) {
+        return addAsync(request, JobToDo.doing(this, mode));
+    }
+
+    /**
+     * 异步加载一个插件
+     * <p>
+     * 如果需要获取一个已经正在运行的插件加载任务的状态, 可以通过{@link #getRequestState(Class)}获得。
+     *
+     * @param request 插件请求
+     * @param job     做神马, 参考{@link Mode}
+     * @return 当前插件请求
+     */
+    public RequestState addAsync(@NonNull final PluginRequest request, @NonNull final JobToDo job) {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
+        mRequestStates = ensureHashMap(mRequestStates);
         RequestState requestState = mRequestStates.get(request.getClass());
 
         // Cancel if exist.
@@ -173,11 +226,7 @@ public class Frontia implements PluginManager {
         Future<PluginRequest> future = mExecutorService.submit(new Callable<PluginRequest>() {
             @Override
             public PluginRequest call() throws Exception {
-                Task.doing(Frontia.this, mode).doing(request);
-
-                Logger.i(TAG, "request id = " + request.getId()
-                        + ", state log = " + request.getLog());
-                return request;
+                return add(request, job);
             }
         });
 
@@ -189,51 +238,143 @@ public class Frontia implements PluginManager {
     /**
      * 获取插件加载任务的状态
      */
+    @Nullable
     public RequestState getRequestState(Class<? extends PluginRequest> clazz) {
-        return mRequestStates.get(clazz);
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
+        return mRequestStates == null || mRequestStates == Collections.EMPTY_MAP ?
+                null : mRequestStates.get(clazz);
     }
 
+    @Override
+    public Class getClass(Class<? extends Plugin> clazz, String className) throws LoadError {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
+        if (mLoadedPlugins == null || mLoadedPlugins == Collections.EMPTY_MAP) {
+            return null;
+        }
+
+        Plugin plugin = mLoadedPlugins.get(clazz);
+
+        if (plugin == null) {
+            throw new LoadError("Plugin has not yet been loaded.", ERROR_LOA_NOT_LOADED);
+        }
+
+        return mLoader.loadClass(plugin, className);
+    }
+
+    @Override
+    public <B extends PluginBehavior, P extends Plugin<B>> B getBehavior(P clazz) throws LoadError {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
+        if (mLoadedPlugins == null || mLoadedPlugins == Collections.EMPTY_MAP) {
+            return null;
+        }
+
+        Plugin plugin = mLoadedPlugins.get(clazz);
+
+        if (plugin != null) {
+            PluginBehavior behavior = plugin.getBehavior();
+            if (behavior != null) {
+                return (B) behavior;
+            }
+        }
+
+        throw new LoadError("Plugin has not yet been loaded.", ERROR_LOA_NOT_LOADED);
+    }
+
+    @Override
+    public <B extends PluginBehavior, P extends Plugin<B>> P getPlugin(P clazz) {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
+        return mLoadedPlugins == null || mLoadedPlugins == Collections.EMPTY_MAP ?
+                null : (P) mLoadedPlugins.get(clazz);
+    }
+
+    @Override
+    public void addLoadedPlugin(Class<? extends PluginBehavior> clazz, Plugin plugin) {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
+        mLoadedPlugins = ensureHashMap(mLoadedPlugins);
+        mLoadedPlugins.put(clazz, plugin);
+    }
+
+    private Map ensureHashMap(Map map) {
+        if (map == null || map == Collections.EMPTY_MAP) {
+            map = new HashMap();
+        }
+
+        return map;
+    }
 
     @Override
     public PluginSetting getSetting() {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
         return mSetting;
     }
 
     @Override
     public PluginLoader getLoader() {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
         return mLoader;
     }
 
     @Override
     public PluginUpdater getUpdater() {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
         return mUpdater;
     }
 
     @Override
     public PluginInstaller getInstaller() {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
         return mInstaller;
     }
 
+    @Override
+    public PluginCallback getCallback() {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
+        return mController;
+    }
+
     public ExecutorService getExecutor() {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
         return mExecutorService;
     }
 
-    public Handler getCallbackHandler() {
-        return mCallbackHandler;
-    }
-
-    @Override
-    public Class loadClass(@NonNull Plugin plugin, String className) throws IllegalPluginException {
-        return mLoader.loadClass(plugin, className);
-
-    }
-
-    @Override
-    public BaseBehaviour getBehaviour(Plugin plugin) throws IllegalPluginException {
-        return mLoader.getBehaviour(plugin);
-    }
-
     private void printDebugInfo() {
+        if (!mHasInit) {
+            throw new RuntimeException("Frontia has not yet been init.");
+        }
+
         if (Logger.DEBUG) {
             Logger.v(TAG, "-");
             Logger.v(TAG, "Frontia init");
@@ -261,17 +402,10 @@ public class Frontia implements PluginManager {
         }
 
         /**
-         * 插件请求任务是否失败
-         */
-        public boolean isFailed() {
-            return mRequest.isUpdateFail();
-        }
-
-        /**
          * 取消插件请求任务
          */
         public void cancel() {
-            mRequest.getController().cancel();
+            mRequest.cancel();
             mFuture.cancel(true);
         }
 
@@ -293,31 +427,45 @@ public class Frontia implements PluginManager {
             try {
                 pluginRequest = mFuture.get(timeout, TimeUnit.MILLISECONDS);
 
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-                pluginRequest = mRequest;
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
                 Logger.i(TAG, "Get future request fail, error = " + e.getMessage());
-            } catch (ExecutionException | TimeoutException e) {
-                e.printStackTrace();
+                Logger.w(TAG, e);
                 pluginRequest = mRequest.markException(e);
             }
-
             return pluginRequest;
         }
 
     }
 
-    private abstract static class Task {
-        static Task doing(Frontia manager, int mode) {
-            Task task;
+    /**
+     * 插件加载的模式
+     */
+    public static class Mode {
+        /**
+         * 更新插件, 从远程下载最新版本的插件并拷贝到对应的安装路径
+         */
+        public static final int MODE_UPDATE = 0x0001;
+        /**
+         * 从对应的安装路径加载插件
+         */
+        public static final int MODE_LOAD = 0x0010;
+    }
+
+    /**
+     * 告诉Frontia当前任务要做什么
+     */
+    public abstract static class JobToDo {
+
+        private static JobToDo doing(Frontia manager, int mode) {
+            JobToDo task;
             switch (mode) {
-                case Mode.MODE_UPDATE:                   // Only update plugin.
+                case MODE_UPDATE:               // Only update plugin.
                     task = new Update(manager);
                     break;
-                case Mode.MODE_LOAD:                     // Only load plugin.
+                case MODE_LOAD:                 // Only load plugin.
                     task = new Load(manager);
                     break;
-                case Mode.MODE_UPDATE | Mode.MODE_LOAD:  // Update and load plugin.
+                case MODE_UPDATE | MODE_LOAD:   // Update and load plugin.
                 default:
                     task = new UpdateAndLoad(manager);
                     break;
@@ -325,45 +473,49 @@ public class Frontia implements PluginManager {
             return task;
         }
 
-        final Frontia mManager;
+        final PluginManager mManager;
 
-        Task(Frontia manager) {
+        public JobToDo(PluginManager manager) {
             mManager = manager;
         }
 
-        abstract void doing(PluginRequest request);
-
+        public abstract void doing(PluginRequest request);
 
         /* Impl */
-        static class Update extends Task {
-            Update(Frontia manager) {
+        private static class Update extends JobToDo {
+
+            Update(PluginManager manager) {
                 super(manager);
             }
 
             @Override
-            void doing(PluginRequest request) {
+            public void doing(PluginRequest request) {
                 mManager.getUpdater().updatePlugin(request);
             }
+
         }
 
-        static class Load extends Task {
-            Load(Frontia manager) {
+        private static class Load extends JobToDo {
+
+            Load(PluginManager manager) {
                 super(manager);
             }
 
             @Override
-            void doing(PluginRequest request) {
-                mManager.getLoader().loadPlugin(request);
+            public void doing(PluginRequest request) {
+                mManager.getLoader().load(request);
             }
+
         }
 
-        static class UpdateAndLoad extends Task {
-            UpdateAndLoad(Frontia manager) {
+        private static class UpdateAndLoad extends JobToDo {
+
+            UpdateAndLoad(PluginManager manager) {
                 super(manager);
             }
 
             @Override
-            void doing(PluginRequest request) {
+            public void doing(PluginRequest request) {
                 new Update(mManager).doing(request);
                 new Load(mManager).doing(request);
             }

@@ -1,4 +1,9 @@
+<!--
+  ~ Copyright (c) 2016. Kaede
+  -->
+
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          package="me.kaede.videoplugin">
-    <application />
+    package="me.kaede.videoplugin">
+    <application
+        android:name="me.kaede.pluginpackage.PluginApplication"/>
 </manifest>

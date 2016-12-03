@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
 package moe.studio.frontia.core;
 
 import android.support.annotation.NonNull;

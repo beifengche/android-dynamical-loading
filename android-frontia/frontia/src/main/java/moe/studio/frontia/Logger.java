@@ -1,28 +1,37 @@
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
 package moe.studio.frontia;
 
 import android.util.Log;
+
+import moe.studio.frontia.BuildConfig;
 
 class Logger {
 
     static final boolean DEBUG = BuildConfig.DEBUG;
 
-    public static void v(String TAG, String msg) {
+    static void v(String TAG, String msg) {
         if (!DEBUG) return;
         Log.v(TAG, msg);
     }
 
-    public static void d(String TAG, String msg) {
+    static void d(String TAG, String msg) {
         if (!DEBUG) return;
         Log.d(TAG, msg);
     }
 
-    public static void i(String TAG, String msg) {
+    static void i(String TAG, String msg) {
         if (!DEBUG) return;
         Log.i(TAG, msg);
     }
 
-    public static void w(String TAG, String msg) {
-        if (!DEBUG) return;
+    static void w(String TAG, String msg) {
         Log.w(TAG, msg);
+    }
+
+    static void w(String TAG, Throwable throwable) {
+        Log.w(TAG, throwable);
     }
 }

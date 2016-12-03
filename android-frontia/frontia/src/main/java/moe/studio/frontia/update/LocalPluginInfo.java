@@ -1,15 +1,13 @@
 /*
- * Copyright (c) 2015-2016 BiliBili Inc.
+ * Copyright (c) 2016. Kaede
  */
 
 package moe.studio.frontia.update;
 
 import android.support.annotation.NonNull;
 
-/**
- * Created by Kaede on 16/6/3.
- */
 public class LocalPluginInfo implements Comparable<LocalPluginInfo> {
+
     public String pluginId;
     public int version;
     public boolean isValid;

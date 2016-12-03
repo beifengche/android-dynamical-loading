@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
 // Frontia
 include ':frontia'
 project(':frontia').projectDir = file("frontia")

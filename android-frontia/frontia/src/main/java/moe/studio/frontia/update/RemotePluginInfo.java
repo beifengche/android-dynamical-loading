@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 BiliBili Inc.
+ * Copyright (c) 2016. Kaede
  */
 
 package moe.studio.frontia.update;
@@ -8,9 +8,9 @@ import android.support.annotation.NonNull;
 
 /**
  * 查询服务器插件信息时候用的实体类
- * Created by Kaede on 16/5/3.
  */
 public class RemotePluginInfo implements Comparable<RemotePluginInfo> {
+
     public String pluginId;
     public int version;
     public String downloadUrl;
@@ -21,7 +21,7 @@ public class RemotePluginInfo implements Comparable<RemotePluginInfo> {
 
     @Override
     public int compareTo(@NonNull RemotePluginInfo another) {
-        // 从大到小排序
+        // MAX TO MIN.
         int compare = this.version - another.version;
         return -compare;
 

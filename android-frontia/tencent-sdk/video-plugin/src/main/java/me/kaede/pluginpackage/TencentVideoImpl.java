@@ -1,68 +1,93 @@
+/*
+ * Copyright (c) 2016. Kaede
+ */
+
 package me.kaede.pluginpackage;
 
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
-import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Toast;
-import com.tencent.qqlive.mediaplayer.api.*;
+
+import com.tencent.qqlive.mediaplayer.api.TVK_DlnaFactory;
+import com.tencent.qqlive.mediaplayer.api.TVK_IDlnaMgr;
+import com.tencent.qqlive.mediaplayer.api.TVK_IMediaPlayer;
+import com.tencent.qqlive.mediaplayer.api.TVK_MediaPlayerFactory;
+import com.tencent.qqlive.mediaplayer.api.TVK_NetVideoInfo;
+import com.tencent.qqlive.mediaplayer.api.TVK_PlayerMsg;
+import com.tencent.qqlive.mediaplayer.api.TVK_PlayerVideoInfo;
+import com.tencent.qqlive.mediaplayer.api.TVK_SDKMgr;
+import com.tencent.qqlive.mediaplayer.api.TVK_UserInfo;
 import com.tencent.qqlive.mediaplayer.view.TVK_PlayerVideoView;
+
 import moe.studio.plugin.video_behavior.ITencentVideo;
+
 
 public class TencentVideoImpl implements ITencentVideo {
 	public static final String TAG = "TencentVideoImpl";
-	private static final String APPKEY_TINYPLAYER = "DbWzjYdqH9TI2tkBHjuIIfrjJE4mphw+ckykKyP/zofrkJ7omBH3B2csn+ujIl2rL4fQfgy5vS+0P06XE/HghzAwUgq8Lld3lkxQ7qYTtutBLIbqF2xIAyaGnYYGFlg3R3+7d/SBVFLTS9hD5n4vkyQHUQGY9KF7lK5wbL6O0xyqTQXPBwl42dtE8KfXpER30kLycCgEOE/TUxdX99jC0VMjmVWz+d9zkhcEnMop89tE27R8rygXW1t897+JExAmD6zULM1lCG45JYUcmTaW0+nZYrPvpUz8IeQ1Z0XyWblUGo59TSw6Pj0eWxoNK4FN6Ea7yU9c9Bxv7Aba/Rzg4Q==";
+
+	// TEST KEY
+	private static final String APPKEY_TINYPLAYER = "DbWzjYdqH9TI2tkBHjuIIfrjJE4mphw+ckykKyP/zo" +
+			"frkJ7omBH3B2csn+ujIl2rL4fQfgy5vS+0P06XE/HghzAwUgq8Lld3lkxQ7qYTtutBLIbqF2xIAyaGnYYG" +
+			"Flg3R3+7d/SBVFLTS9hD5n4vkyQHUQGY9KF7lK5wbL6O0xyqTQXPBwl42dtE8KfXpER30kLycCgEOE/TUx" +
+			"dX99jC0VMjmVWz+d9zkhcEnMop89tE27R8rygXW1t897+JExAmD6zULM1lCG45JYUcmTaW0+nZYrPvpUz8" +
+			"IeQ1Z0XyWblUGo59TSw6Pj0eWxoNK4FN6Ea7yU9c9Bxv7Aba/Rzg4Q==";
 
 	static TencentVideoImpl instance;
 
+	Context mContext;
 	Activity activity;
-	//播放器相关
+
+	// 播放器相关
 	private TVK_PlayerVideoView mDrawImgSurface = null;
 	private TVK_IMediaPlayer mVideoPlayer = null;
 	private TVK_UserInfo mUserinfo = null;
 	private TVK_PlayerVideoInfo mPlayerinfo = null;
 
-	//播放vid
+	// 播放vid
 	private String[] mVideoId = {"t001469z2ma", "y0015vw2o7f",
 			"y0015vw2o7f", "j0015lqcpcu",
 			"e0015jga0wp", "j0137p2txbs",
-			"y0016j6llrg",//付费id,使用这个vid 的时候需要设置清晰度不能为mp4和msd
-			"a0012p8g8cr",// 动漫
-			"9Wzab3vNJ8b", // 试看
+			"y0016j6llrg",  // 付费id,使用这个vid 的时候需要设置清晰度不能为mp4和msd
+			"a0012p8g8cr",  // 动漫
+			"9Wzab3vNJ8b",  // 试看
 			"q0013te787c",
-			"t0016jjsrri",   //横有黑边
+			"t0016jjsrri",  // 横有黑边
 			"y0012j6s11e",  // 竖有黑边，西游降魔
-			"100003600", // 直播 深圳卫视
+			"100003600",    // 直播 深圳卫视
 			"100002500",
 			"r0016w5wxcw"
 	};
-	//UI 相关
-	protected LayoutInflater mInflater;
 
 	private int mLastWidth = 0;
 	private int mLastHeigth = 0;
 
-	public static TencentVideoImpl getInstance(Activity activity){
+	public static TencentVideoImpl getInstance(Context context){
 		if (instance == null) {
 			synchronized (TencentVideoImpl.class){
-				instance = new TencentVideoImpl(activity);
+				instance = new TencentVideoImpl(context);
 			}
 		}
 		return instance;
 	}
 
-	private TencentVideoImpl(Activity activity) {
-		this.activity = activity;
+	private TencentVideoImpl(Context context) {
+		mContext = context;
 		TVK_SDKMgr.setDebugEnable(true);
-		TVK_SDKMgr.initSdk(activity, APPKEY_TINYPLAYER, ""); //测试用AppKey：1~100
+		TVK_SDKMgr.initSdk(context, APPKEY_TINYPLAYER, ""); //测试用AppKey：1~100
 		TVK_IDlnaMgr dlnaMgr = TVK_DlnaFactory.getDlnaInstance();
 		if (null != dlnaMgr) {
 			dlnaMgr.search(false);
 		}
+	}
+
+	@Override
+	public void attach(Activity activity) {
+		this.activity = activity;
 	}
 
 	@Override
@@ -73,9 +98,9 @@ public class TencentVideoImpl implements ITencentVideo {
 	@Override
 	public void onCreate() {
 		// 创建播放器
-		mDrawImgSurface = new TVK_PlayerVideoView(activity);
+		mDrawImgSurface = new TVK_PlayerVideoView(mContext);
 		mDrawImgSurface.setBackgroundColor(Color.YELLOW);
-		mVideoPlayer = TVK_MediaPlayerFactory.createMediaPlayer(activity, mDrawImgSurface);
+		mVideoPlayer = TVK_MediaPlayerFactory.createMediaPlayer(mContext, mDrawImgSurface);
 
 		// 回调例子
 		initListenersDemo();
@@ -92,6 +117,11 @@ public class TencentVideoImpl implements ITencentVideo {
 		mUserinfo = new TVK_UserInfo("", "");
 		mPlayerinfo = new TVK_PlayerVideoInfo(mPlayType, mVid, "");
 		mVideoPlayer.openMediaPlayer(activity, mUserinfo, mPlayerinfo, "", 0, 0);
+	}
+
+	@Override
+	public void toast2(Context context, String msg) {
+		Toast.makeText(context, msg, Toast.LENGTH_LONG).show();
 	}
 
 
@@ -214,7 +244,7 @@ public class TencentVideoImpl implements ITencentVideo {
 		mVideoPlayer.setOnErrorListener(new TVK_IMediaPlayer.OnErrorListener() {
 			@Override
 			public boolean onError(TVK_IMediaPlayer mpImpl, int model, int what,
-			                       int extra, String detailInfo, Object Info) {
+								   int extra, String detailInfo, Object Info) {
 				Toast.makeText(activity.getApplicationContext(), "视频播放失败(" + model + ", " + what + ")", Toast.LENGTH_SHORT).show();
 				return false;
 			}
