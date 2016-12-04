@@ -2,7 +2,7 @@
  * Copyright (c) 2016. Kaede
  */
 
-package me.kaede.pluginpackage;
+package moe.studio.plugin.video;
 
 import moe.studio.plugin.video_behavior.ITencentVideo;
 import moe.studio.frontia.core.PluginApp;

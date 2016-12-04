@@ -3,7 +3,7 @@
   -->
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="me.kaede.videoplugin">
+    package="moe.studio.plugin.video">
     <application
-        android:name="me.kaede.pluginpackage.PluginApplication"/>
+        android:name="moe.studio.plugin.video.PluginApplication"/>
 </manifest>
