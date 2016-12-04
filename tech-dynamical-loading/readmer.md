@@ -1,5 +1,5 @@
 
-![android-dynamical-loading](doc/banner-frontia.jpg "android-dynamical-loading")
+![android-dynamical-loading](doc/banner_frontia.jpg "android-dynamical-loading")
 
 #### 项目结构
 | 文件夹        |     说明     |
