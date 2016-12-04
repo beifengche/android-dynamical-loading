@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
+<?xml version="1.0" encoding="utf-8"?><!--
   ~ Copyright (c) 2016. Kaede
   -->
 
@@ -19,20 +18,20 @@
         android:layout_alignParentTop="true"
         android:layout_margin="5dp"
         android:background="#ccc"
-        android:elevation="1dp"
         android:orientation="vertical" />
 
     <TextView
         android:id="@+id/output"
-        android:padding="5dp"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_above="@+id/buttons"
         android:layout_below="@+id/player"
         android:layout_margin="5dp"
         android:background="#eee"
-        android:text="Output"
-        android:gravity="top|left" />
+        android:padding="5dp"
+        android:lines="10"
+        android:scrollbars="vertical"
+        android:text="Output" />
 
     <LinearLayout
         android:id="@+id/buttons"
