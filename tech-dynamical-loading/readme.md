@@ -1,5 +1,5 @@
 
-![android-dynamical-loading](doc/dl.jpg "android-dynamical-loading")
+![android-dynamical-loading](doc/banner-frontia.jpg "android-dynamical-loading")
 
 #### 项目结构
 | 文件夹        |     说明     |
@@ -21,7 +21,7 @@
 
 现在使用得比较广泛的动态加载技术的核心一般都是使用 **ClassLoader** ，后者能够加载程序外部的类（已编译好的），从而达到升级代码逻辑的目的。虽然动态加载的核心原理比较简单，但是根据功能的复杂程度，实际在Android项目中使用的时候还要涉及许多其他方面的知识，这里分为几个篇幅分别进行介绍。
 
-##### 1. 简单易懂的介绍
+#### 1. 简单易懂的介绍
 内容：
  1. 动态加载技术在Android中的使用背景；
  2. Android的动态的加载大致可以分为“加载SO库”和“加载DEX/JAR/APK”两种；
@@ -34,12 +34,12 @@
 地址：[简单易懂的介绍](http://kaedea.com/2016/02/06/android-dynamical-loading-01-introduction/)
 <br>
 
-##### 2. 动态加载的分类
+#### 2. 动态加载的分类
 内容：介绍一下动态加载的类型，理清一下动态加载、插件化、热部署、热修复等技术之间的关系。<br>
 地址：[动态加载的分类](http://kaedea.com/2016/05/14/android-dynamical-loading-02-type/)
 <br>
 
-##### 3. 类加载器ClassLoader的工作机制
+#### 3. 类加载器ClassLoader的工作机制
 内容：
  1. 类加载器ClassLoader的创建过程和加载类的过程；
  2. ClassLoader的双亲代理模式；
@@ -50,7 +50,7 @@
 地址：[ClassLoader的工作机制](http://kaedea.com/2016/02/07/android-dynamical-loading-02-classloader/)
 <br>
 
-##### 4. 加载SD卡的SO库
+#### 4. 加载SD卡的SO库
 内容：
  1. 如何编译和使用SO库；
  2. 分析Android中加载SO库相关的源码；
@@ -59,12 +59,12 @@
 地址：[加载SD卡的SO库](http://kaedea.com/2016/06/01/android-dynamical-loading-03-so-in-sdcard/)
 <br>
 
-##### 5. 使用SO库时需要注意的一些问题
+#### 5. 使用SO库时需要注意的一些问题
 内容：介绍使用SO库开发时的一些坑，提供从网络下载并加载SO库的策略。<br>
 地址：[使用SO库时需要注意的一些问题](http://kaedea.com/2016/06/04/android-dynamical-loading-04-so-problems/)
 <br>
 
-##### 6. 简单的动态加载模式
+#### 6. 简单的动态加载模式
 内容：
  1. 如何创建我们需要的dex文件；
  2. 如何加载dex文件里面的类；
@@ -73,7 +73,7 @@
 地址：[简单加载模式](http://kaedea.com/2016/06/05/android-dynamical-loading-05-so-simple-mode/)
 <br>
 
-##### 7. 代理Activity的模式
+#### 7. 代理Activity的模式
 内容：
  1. 如何启动插件APK中没有注册的Activity
  2. 代理Activity模式开源项目“dynamic-load-apk”
@@ -81,7 +81,7 @@
 地址：[代理Activity模式](http://kaedea.com/2016/06/10/android-dynamical-loading-06-proxy-activity/)
 <br>
 
-##### 8. 动态创建Activity的模式
+#### 8. 动态创建Activity的模式
 内容：
  1. 如何在运行时动态创建一个Activity；
  2. 自定义ClassLoader并偷梁换柱替换想要加载的类；
@@ -89,10 +89,17 @@
  4. 代理模式与动态创建类模式的区别；
 
 地址：[动态创建Activity模式](http://kaedea.com/2016/06/14/android-dynamical-loading-07-dynamic-activity/)
+<br>
 
+#### 9. 设计一个插件化框架Frontia
+内容：结合动态加载系列文章的分析，设计并开发一个Android的插件化框架，命名为Frontia。<br>
+地址：[设计一个插件化框架Frontia题](http://kaedea.com/2016/07/10/android-dynamical-loading-08-satrt-frontia/)
+<br>
+
+#### 10.
 
 #### 还未发布的内容
-1. 使用“环境注入”的模式；
+1. 使用“系统API HOOK”以及“环境注入”的模式；
 2. 使用动态加载技术的情形；
 3. 使用动态加载方式项目的项目结构调整和开发调试方式；
 4. 开源项目“Android-Frontia”，动态加载框架的项目，特点是专注于“插件化”和“宿主与插件之间的通讯”、灵活的扩展和使用方式，并提供完整的插件更新、安装和管理策略；

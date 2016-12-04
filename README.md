@@ -1,5 +1,5 @@
 
-![android-dynamical-loading](android-frontia/doc/banner_frontia.jpg "android-dynamical-loading")
+![android-dynamical-loading](android-frontia/doc/banner_frontia_2.jpg "android-dynamical-loading")
 
 #### 项目介绍
 
