@@ -18,6 +18,7 @@ import moe.studio.downloader.DownloadRequest;
 import moe.studio.downloader.SyncDownloadProcessorImpl;
 import moe.studio.downloader.core.DownloadListener;
 import moe.studio.downloader.core.DownloadProcessor;
+import moe.studio.downloader.core.RetryPolicy.RetryPolicyImpl;
 import moe.studio.frontia.Internals.ApkUtils;
 import moe.studio.frontia.Internals.FileUtils;
 import moe.studio.frontia.core.PluginManager;
@@ -383,8 +384,7 @@ class PluginUpdaterImpl implements PluginUpdater {
                 .setContentLength(fileSize)
                 .setDestFile(destFile)
                 .setDeleteDestFileOnFailure(true)
-                // TODO: 2016/11/30 Retry
-                //.setRetryPolicy()
+                .setRetryPolicy(new RetryPolicyImpl(mManager.getSetting().getRetryCount()))
                 .setListener(new DownloadListener() {
                     @Override
                     public void onComplete(DownloadRequest request) {
