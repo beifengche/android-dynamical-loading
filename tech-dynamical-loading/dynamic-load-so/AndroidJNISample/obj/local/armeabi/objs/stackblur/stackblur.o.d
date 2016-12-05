@@ -1,4 +1,4 @@
-/Users/Kaede/Repository/Kaede/android-dynamical-loading/tech-dynamical-loading/dynamic-load-so/AndroidJNISample/obj/local/armeabi-v7a/objs/stackblur/stackblur.o: \
+/Users/Kaede/Repository/Kaede/android-dynamical-loading/tech-dynamical-loading/dynamic-load-so/AndroidJNISample/obj/local/armeabi/objs/stackblur/stackblur.o: \
  /Users/Kaede/Repository/Kaede/android-dynamical-loading/tech-dynamical-loading/dynamic-load-so/AndroidJNISample/jni//stackblur/stackblur.c \
  /Users/Kaede/Documents/ADT/android-ndk-r10e/platforms/android-9/arch-arm/usr/include/jni.h \
  /Users/Kaede/Documents/ADT/android-ndk-r10e/platforms/android-9/arch-arm/usr/include/sys/cdefs.h \
